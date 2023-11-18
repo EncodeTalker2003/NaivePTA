@@ -10,8 +10,33 @@
 
 - description: pku software analysis courses project pointer analysis, your implementation
   analysisClass: pku.PointerAnalysis
-  id: pku-pta
+  id: pku-pta-template
   requires: [ ]
+
+- description: pku software analysis courses project pointer analysis, not implenting anything
+  analysisClass: pku.PointerAnalysisCheat
+  id: pku-pta-cheat
+  requires: [ ]
+
+- description: pointer analysis, a field-sensitive and context-insensitive one 
+  analysisClass: cipta.CIPTA
+  id: pku-pta
+  options:
+    merge-string-constants: false
+    merge-string-objects: false
+    merge-string-builders: false
+    merge-exception-objects: true
+    only-app: false
+    distinguish-string-constants: null
+    action: dump
+    file: null
+  requires: [ ]
+
+- description: a trivial cases
+  analysisClass: cipta.PointerAnalysisTrivial
+  id: cipta-trivial
+  requires: [ ]
+  
 
 - description: whole-program pointer analysis
   analysisClass: pascal.taie.analysis.pta.PointerAnalysis
@@ -52,7 +77,7 @@
   id: cg
   requires: [ pta(algorithm=pta) ]
   options:
-    algorithm: pta # | cha
+    algorithm: cha # | pta
     dump: false # whether dump call graph in dot file
     dump-methods: false # whether dump reachable methods
     dump-call-edges: false # whether dump call edges

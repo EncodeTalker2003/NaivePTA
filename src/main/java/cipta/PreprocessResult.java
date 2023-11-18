@@ -1,4 +1,4 @@
-package pku;
+package cipta;
 
 
 import java.util.HashMap;
@@ -48,7 +48,7 @@ public class PreprocessResult {
      */
     public int getObjIdAt(New stmt)
     {
-		if (!obj_ids.containsKey(stmt)) return -1;
+        if (!obj_ids.containsKey(stmt)) return -1;
         return obj_ids.get(stmt);
     }
     /**
