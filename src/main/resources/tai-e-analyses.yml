@@ -20,7 +20,21 @@
 
 - description: pointer analysis, a field-sensitive and context-insensitive one 
   analysisClass: cipta.CIPTA
-  id: pku-pta
+  id: cipta # | pku-pta
+  options:
+    merge-string-constants: true
+    merge-string-objects: false
+    merge-string-builders: false
+    merge-exception-objects: true
+    only-app: false
+    distinguish-string-constants: null
+    action: dump
+    file: null
+  requires: [ ]
+
+- description: pointer analysis, a field-sensitive and context-sensitive one 
+  analysisClass: cspta.CSPTA
+  id: pku-pta # cspta
   options:
     merge-string-constants: false
     merge-string-objects: false

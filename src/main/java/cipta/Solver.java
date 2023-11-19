@@ -38,6 +38,8 @@ import java.util.List;
 import java.util.TreeMap;
 import java.util.*;
 
+import pascal.taie.ir.stmt.Throw;
+
 class Solver {
 
 	private static final Logger logger = LogManager.getLogger(IRDumper.class);
@@ -110,8 +112,16 @@ class Solver {
     private void addReachable(JMethod method) {
         if (!callGraph.contains(method)) {
 			callGraph.addReachableMethod(method);
-			method.getIR().getStmts().forEach(stmt -> stmt.accept(stmtProcessor));
+			method.getIR().getStmts().forEach(stmt -> {
+				//System.out.println(stmt);
+				if (stmt instanceof Throw) {
+					// System.out.println("Throw statement is not supported");
+					//throw new AnalysisException("Throw statement is not supported");
+				}
+				stmt.accept(stmtProcessor);
+			});
 		}
+		System.out.println();
     }
 
     /**
@@ -188,6 +198,7 @@ class Solver {
 		pointerFlowGraph.addEdge(source, target);
 		PointsToSet pts = source.getPointsToSet();
 		if (!pts.isEmpty()) {
+			//System.out.println("addPFGEdge: " + pts.size());
 			workList.addEntry(target, pts);
 		}
     }
@@ -317,6 +328,8 @@ class Solver {
 			Pointer ptr = pointerFlowGraph.getVarPtr(pt);
 			PointsToSet pts = ptr.getPointsToSet();
 			TreeSet<Integer> ans = new TreeSet<>();
+			System.out.println("test_id: " + test_id + ", cnt: " + pts.size());
+			System.out.println("Var:" + pt);
 			for (Obj obj: pts) {
 				//cnt += 1;
 				New stmt = obj_stmt.get(obj);

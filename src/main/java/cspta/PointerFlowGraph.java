@@ -20,36 +20,38 @@
  * License along with Tai-e. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package cipta;
+package cspta;
 
-import pascal.taie.analysis.ProgramAnalysis;
-import pascal.taie.config.AnalysisConfig;
-import pascal.taie.analysis.pta.core.heap.AllocationSiteBasedModel;
-import pascal.taie.analysis.pta.core.heap.HeapModel;
+import pascal.taie.analysis.pta.core.cs.element.Pointer;
+import pascal.taie.util.collection.Maps;
+import pascal.taie.util.collection.MultiMap;
+
+import java.util.Set;
 
 /**
- * Context-insensitive pointer analysis.
+ * Represents pointer flow graph in context-sensitive pointer analysis.
  */
-public class CIPTA extends ProgramAnalysis<PointerAnalysisResult> {
+class PointerFlowGraph {
 
-    public static final String ID = "cipta";
+    /**
+     * Map from a pointer (node) to its successors in PFG.
+     */
+    private final MultiMap<Pointer, Pointer> successors = Maps.newMultiMap();
 
-    public CIPTA(AnalysisConfig config) {
-        super(config);
+    /**
+     * Adds an edge (source -> target) to this PFG.
+     *
+     * @return true if this PFG changed as a result of the call,
+     * otherwise false.
+     */
+    boolean addEdge(Pointer source, Pointer target) {
+        return successors.put(source, target);
     }
 
-    @Override
-    public PointerAnalysisResult analyze() {
-		PointerAnalysisResult result;
-		try {
-			HeapModel heapModel = new AllocationSiteBasedModel(getOptions());
-        	Solver solver = new Solver(heapModel);
-        	result = solver.solve();
-		} catch (Exception e) {
-			TrivialSolver trivialSolver = new TrivialSolver();
-			
-			result = trivialSolver.solve();
-		}
-        return result;
+    /**
+     * @return successors of given pointer in the PFG.
+     */
+    Set<Pointer> getSuccsOf(Pointer pointer) {
+        return successors.get(pointer);
     }
 }
