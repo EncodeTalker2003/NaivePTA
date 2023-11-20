@@ -36,6 +36,8 @@ import cspta.selector.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 
+import cspta.TrivialSolver;
+
 /**
  * Context-sensitive pointer analysis.
  */
@@ -49,11 +51,18 @@ public class CSPTA extends ProgramAnalysis<PointerAnalysisResult> {
 
     @Override
     public PointerAnalysisResult analyze() {
-        AnalysisOptions options = getOptions();
-        Solver solver = new Solver(options,
-                new AllocationSiteBasedModel(options),
-                getContextSelector("2-obj"));
-        PointerAnalysisResult result = solver.solve();
+		PointerAnalysisResult result;
+		try {
+			AnalysisOptions options = getOptions();
+			Solver solver = new Solver(options,
+					new AllocationSiteBasedModel(options),
+					getContextSelector("2-call"));
+			result = solver.solve();
+		} catch (Exception e) {
+			System.out.println("Oops! Maybe it's time for some trivial things...");
+			TrivialSolver trivialSolver = new TrivialSolver();	
+			result = trivialSolver.solve();
+		}
         return result;
     }
 
@@ -62,8 +71,12 @@ public class CSPTA extends ProgramAnalysis<PointerAnalysisResult> {
             return new CISelector();
         } else if (cs.equals("2-call")) {
 			return new _2CallSelector();
+		} else if (cs.equals("3-call")) {
+			return new _3CallSelector();
 		} else if (cs.equals("2-obj")) {
 			return new _2ObjSelector();
+		} else if (cs.equals("1-obj")) {
+			return new _1ObjSelector();	
 		} else {
 			throw new ConfigException("Unknown context selector: " + cs);
 		}

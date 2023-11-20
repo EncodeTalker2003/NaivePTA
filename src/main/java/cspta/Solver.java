@@ -43,12 +43,12 @@ import pascal.taie.ir.stmt.New;
 import pascal.taie.ir.stmt.StmtVisitor;
 import pascal.taie.ir.stmt.StoreArray;
 import pascal.taie.ir.stmt.StoreField;
+import pascal.taie.ir.stmt.Cast;
+import pascal.taie.ir.stmt.Monitor;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JField;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.Type;
-
-import cspta.context.ListContext;
 
 import java.util.*;
 
@@ -138,6 +138,7 @@ class Solver {
      * Processes new reachable context-sensitive method.
      */
     private void addReachable(CSMethod csMethod) {
+		//System.out.println("----------Method Begins----------");
         if (!callGraph.contains(csMethod)) {
 			callGraph.addReachableMethod(csMethod);
 			csMethod.getMethod().getIR().getStmts().forEach(stmt -> {
@@ -147,9 +148,15 @@ class Solver {
                     var className = methodRef.getDeclaringClass().getName();
                     var methodName = methodRef.getName();
 				}*/
+				//System.out.println(stmt);
+				if (stmt instanceof Monitor) {
+					throw new RuntimeException();
+				}
 				stmt.accept(new StmtProcessor(csMethod));
 			});
 		}
+		//System.out.println("----------Method Ends----------");
+		//System.out.println("");
     }
 
     /**
@@ -168,6 +175,11 @@ class Solver {
 
         @Override
 		public Void visit(New stmt) {
+			//System.out.println(stmt);
+			/*if ((stmt.toString().contains("java.util.")) && ((stmt.toString().contains("Map")) || stmt.toString().contains("Set"))) {
+				System.out.println("Haven't implemented yet for" + stmt);
+				throw new RuntimeException();
+			}*/
 			Pointer ptr = csManager.getCSVar(context, stmt.getLValue());
 			Obj obj = heapModel.getObj(stmt);
 			Context heapContext = contextSelector.selectHeapContext(csMethod, obj);
@@ -188,7 +200,19 @@ class Solver {
 		}
 
 		@Override
+		public Void visit(Cast stmt) {
+			addPFGEdge(
+				csManager.getCSVar(context, stmt.getRValue().getValue()), 
+				csManager.getCSVar(context, stmt.getLValue())
+			);
+			return null;
+		}
+
+		@Override
 		public Void visit(Invoke stmt) {
+			if (stmt.isDynamic()) {
+				throw new RuntimeException();
+			}
 			if (stmt.isStatic()) {
 				JMethod callee = resolveCallee(null, stmt);
 				CSCallSite csCallSite = csManager.getCSCallSite(context, stmt);
