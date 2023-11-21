@@ -35,6 +35,10 @@ import pascal.taie.analysis.pta.pts.PointsToSetFactory;
 import pascal.taie.config.AnalysisOptions;
 import pascal.taie.ir.exp.InvokeExp;
 import pascal.taie.ir.exp.Var;
+import pascal.taie.ir.exp.NewMultiArray;
+import pascal.taie.ir.exp.NewExp;
+import pascal.taie.ir.exp.Literal;
+import pascal.taie.ir.exp.ReferenceLiteral;
 import pascal.taie.ir.stmt.Copy;
 import pascal.taie.ir.stmt.Invoke;
 import pascal.taie.ir.stmt.LoadArray;
@@ -45,12 +49,16 @@ import pascal.taie.ir.stmt.StoreArray;
 import pascal.taie.ir.stmt.StoreField;
 import pascal.taie.ir.stmt.Cast;
 import pascal.taie.ir.stmt.Monitor;
+import pascal.taie.ir.stmt.AssignLiteral;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JField;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.Type;
+import pascal.taie.language.type.ClassType;
 
 import java.util.*;
+
+import javax.management.RuntimeErrorException;
 
 import cspta.selector.*;
 import cspta.context.*;
@@ -149,9 +157,9 @@ class Solver {
                     var methodName = methodRef.getName();
 				}*/
 				//System.out.println(stmt);
-				if (stmt instanceof Monitor) {
+				/*if (stmt instanceof Monitor) {
 					throw new RuntimeException();
-				}
+				}*/
 				stmt.accept(new StmtProcessor(csMethod));
 			});
 		}
@@ -187,6 +195,26 @@ class Solver {
 			PointsToSet pts = ptsFactory.make(csObj);
 			workList.addEntry(ptr, pts);
 			obj_stmt.put(csObj, stmt);
+
+			NewExp rval = stmt.getRValue();
+			if (rval instanceof NewMultiArray) {
+				throw new RuntimeException();
+			}
+			return null;
+		}
+
+		@Override
+		public Void visit(AssignLiteral stmt) {
+			Literal lit = stmt.getRValue();
+			Type typ = lit.getType();
+			if (typ instanceof ClassType) {
+				Obj obj = heapModel.getConstantObj((ReferenceLiteral) lit);
+				Context heapContext = contextSelector.selectHeapContext(csMethod, obj);
+				Pointer ptr = csManager.getCSVar(context, stmt.getLValue());
+				CSObj csObj = csManager.getCSObj(heapContext, obj);
+				PointsToSet pts = ptsFactory.make(csObj);
+				workList.addEntry(ptr, pts);
+			}
 			return null;
 		}
 
@@ -276,29 +304,31 @@ class Solver {
 				Var var = varptr.getVar();
 				Context context = varptr.getContext();
 				diff.forEach(obj -> {
-					var.getStoreFields().forEach(stmt -> {
-						addPFGEdge(
-							csManager.getCSVar(context, stmt.getRValue()),
-							csManager.getInstanceField(obj, stmt.getFieldRef().resolve()));
-					});
+					if (obj.getObject().isFunctional()) {
+						var.getStoreFields().forEach(stmt -> {
+							addPFGEdge(
+								csManager.getCSVar(context, stmt.getRValue()),
+								csManager.getInstanceField(obj, stmt.getFieldRef().resolve()));
+						});
 
-					var.getLoadFields().forEach(stmt -> {
-						addPFGEdge(
-							csManager.getInstanceField(obj, stmt.getFieldRef().resolve()),
-							csManager.getCSVar(context, stmt.getLValue()));
-					});
+						var.getLoadFields().forEach(stmt -> {
+							addPFGEdge(
+								csManager.getInstanceField(obj, stmt.getFieldRef().resolve()),
+								csManager.getCSVar(context, stmt.getLValue()));
+						});
 
-					var.getStoreArrays().forEach(stmt -> {
-						addPFGEdge(
-							csManager.getCSVar(context, stmt.getRValue()), 
-							csManager.getArrayIndex(obj));
-					});
+						var.getStoreArrays().forEach(stmt -> {
+							addPFGEdge(
+								csManager.getCSVar(context, stmt.getRValue()), 
+								csManager.getArrayIndex(obj));
+						});
 
-					var.getLoadArrays().forEach(stmt -> {
-						addPFGEdge(
-							csManager.getArrayIndex(obj), 
-							csManager.getCSVar(context, stmt.getLValue()));
-					});
+						var.getLoadArrays().forEach(stmt -> {
+							addPFGEdge(
+								csManager.getArrayIndex(obj), 
+								csManager.getCSVar(context, stmt.getLValue()));
+						});
+					}
 
 					processCall(varptr, obj);
 				});
@@ -358,6 +388,8 @@ class Solver {
 							csManager.getCSVar(caller_ctx, stmt.getLValue()));
 					});
 				}
+			} else {
+				throw new RuntimeException();
 			}
 		}
 	}
@@ -372,6 +404,9 @@ class Solver {
         recv.getVar().getInvokes().forEach(stmt -> {
 			CSCallSite csCallSite = csManager.getCSCallSite(recv.getContext(), stmt);
 			JMethod callee = resolveCallee(recvObj, stmt);
+			if (callee == null) {
+				throw new RuntimeException();
+			}
 			Context context = contextSelector.selectContext(csCallSite, recvObj, callee);
 			CSMethod csCallee = csManager.getCSMethod(context, callee);
 			PointsToSet new_pts = ptsFactory.make(recvObj);
