@@ -1,10 +1,11 @@
 ### Todolist(按照优先级从高到底排序)
 
-现在的版本: 55.55/70
+现在的版本: 56.61/70
 
 可能可以做的优化:
 - 需要加一个计时类防止跑超时.
   - upd(11.21): 可以直接throw一个exception给wrapper.
+  - upd(11.22): 28号测试点看起来会跑很久, 不知道是不是什么暴力函数调用之类的
 - 需要加一个wrapper使得在出现exception或者无法handle的情况时输出一个最trivial的结果保证soundness.
   - upd(11.21): wrapper已经写好了, 就是需要在分析中加上跳转到wrapper的分支就行
   - upd(11.21): 这个需要更多的测试
@@ -12,6 +13,7 @@
 - 增加Clone的层数. 在`cspta/selector`下实现了两层callSite和object的clone, 应该可以考虑增加层数.
   - upd(11.21): 笑死, 调层数和调参一样, 感觉分析可能鲁棒性不是特别强
 - 特判一些 corner case. 例如throw exception之类的, 可以借助[这里的程序](https://github.com/secure-software-engineering/PointerBench/)跑些测试.
+  - upd(11.22): 已知MultiArray是无法处理的, 暂时考虑直接抛异常
 
 - 改成flow-sensitive的分析.
 

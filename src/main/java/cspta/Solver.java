@@ -55,6 +55,7 @@ import pascal.taie.language.classes.JField;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.Type;
 import pascal.taie.language.type.ClassType;
+import pascal.taie.language.type.ArrayType;
 
 import java.util.*;
 
@@ -147,6 +148,7 @@ class Solver {
      */
     private void addReachable(CSMethod csMethod) {
 		//System.out.println("----------Method Begins----------");
+		
         if (!callGraph.contains(csMethod)) {
 			callGraph.addReachableMethod(csMethod);
 			csMethod.getMethod().getIR().getStmts().forEach(stmt -> {
@@ -160,6 +162,10 @@ class Solver {
 				/*if (stmt instanceof Monitor) {
 					throw new RuntimeException();
 				}*/
+				if (stmt.toString().contains("jdk"))  {
+					System.out.println("Haven't implemented");
+					throw new RuntimeException();
+				}
 				stmt.accept(new StmtProcessor(csMethod));
 			});
 		}
@@ -184,10 +190,6 @@ class Solver {
         @Override
 		public Void visit(New stmt) {
 			//System.out.println(stmt);
-			/*if ((stmt.toString().contains("java.util.")) && ((stmt.toString().contains("Map")) || stmt.toString().contains("Set"))) {
-				System.out.println("Haven't implemented yet for" + stmt);
-				throw new RuntimeException();
-			}*/
 			Pointer ptr = csManager.getCSVar(context, stmt.getLValue());
 			Obj obj = heapModel.getObj(stmt);
 			Context heapContext = contextSelector.selectHeapContext(csMethod, obj);
@@ -432,9 +434,9 @@ class Solver {
 		//System.out.println(obj_stmt.size());
 		preprocessResult.test_pts.forEach((test_id, pt) -> {
 			System.out.println("test_id: " + test_id + ", pt: " + pt + ", cnt: " + csManager.getCSVarsOf(pt).size());
+			TreeSet<Integer> ans = new TreeSet<>();
 			for (CSVar csVar: csManager.getCSVarsOf(pt)) {
 				PointsToSet pts = csVar.getPointsToSet();
-				TreeSet<Integer> ans = new TreeSet<>();
 				for (CSObj csObj: pts) {
 					//cnt += 1;
 					//Obj obj = csobj.getObject();
@@ -446,9 +448,9 @@ class Solver {
 						}
 					}
 				}
-				finalResult.put(test_id, ans);
 				//System.out.println("test_id: " + test_id + ", cnt: " + pts.size());
 			}
+			finalResult.put(test_id, ans);
 		});
 		dump(finalResult);
 	}

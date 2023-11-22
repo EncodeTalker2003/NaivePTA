@@ -22,7 +22,6 @@
   analysisClass: cipta.CIPTA
   id: cipta # | pku-pta
   options:
-    merge-string-constants: true
     merge-string-objects: false
     merge-string-builders: false
     merge-exception-objects: true
@@ -36,12 +35,11 @@
   analysisClass: cspta.CSPTA
   id: pku-pta # cspta
   options:
-    merge-string-constants: false
-    merge-string-objects: false
-    merge-string-builders: false
+    merge-string-objects: true
+    merge-string-builders: true
     merge-exception-objects: true
     only-app: false
-    distinguish-string-constants: null
+    distinguish-string-constants: reflection
     action: dump
     file: null
   requires: [ ]
@@ -91,7 +89,7 @@
   id: cg
   requires: [ pta(algorithm=pta) ]
   options:
-    algorithm: cha # | pta
+    algorithm: pua # | pta
     dump: false # whether dump call graph in dot file
     dump-methods: false # whether dump reachable methods
     dump-call-edges: false # whether dump call edges
