@@ -58,6 +58,8 @@ import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.ArrayType;
 
 import java.util.*;
+import java.util.stream.Collectors;
+
 
 import javax.management.RuntimeErrorException;
 
@@ -76,6 +78,10 @@ class Solver {
 
     private final ContextSelector contextSelector;
 
+	//private Timer timer;
+
+	private boolean timeOut;
+
     private CSManager csManager;
 
     private CSCallGraph callGraph;
@@ -88,7 +94,7 @@ class Solver {
 
 	private HashMap<CSObj, New> obj_stmt;
 
-	private HashMap<Obj, TreeSet<CSObj> > obj2csobj;
+	//private HashMap<Obj, TreeSet<CSObj> > obj2csobj;
 
 	private PointerAnalysisResult finalResult;
 
@@ -117,6 +123,11 @@ class Solver {
     }
 
     private void initialize() {
+		//timeOut = false;
+		timer = new Timer(57);
+		timer.startCountDown();
+		
+
         csManager = new MapBasedCSManager();
         callGraph = new CSCallGraph(csManager);
         pointerFlowGraph = new PointerFlowGraph();
@@ -126,10 +137,10 @@ class Solver {
 		preprocessResult = new PreprocessResult();
 		finalResult = new PointerAnalysisResult();
 		ptsFactory = new PointsToSetFactory(csManager.getObjectIndexer());
-		obj2csobj = new HashMap<>();
+		//obj2csobj = new HashMap<>();
 		
 		World.get().getClassHierarchy().applicationClasses().forEach(jclass->{
-            logger.info("Add benchmark for class {}", jclass.getName());
+            //logger.info("Add benchmark for class {}", jclass.getName());
             jclass.getDeclaredMethods().forEach(method->{
                 if(!method.isAbstract())
                     preprocessResult.analysis(method.getIR());
@@ -335,7 +346,12 @@ class Solver {
 					processCall(varptr, obj);
 				});
 			}
+			/*if ((timeOut) && (!workList.isEmpty())) {
+				System.out.println("Time out Here!");
+				throw new RuntimeException();
+			}*/
 		}
+		//timer.stop();
     }
 
     /**
@@ -373,25 +389,23 @@ class Solver {
 				kind = CallKind.STATIC;
 			} else if (stmt.isVirtual()) {
 				kind = CallKind.VIRTUAL;
-			}
-			if (kind != null) {
-				callGraph.addEdge(new Edge<CSCallSite,CSMethod>(kind, callSite, callee));
-				addReachable(callee);
-				List<Var> args = callee.getMethod().getIR().getParams();
-				for (int i = 0; i < args.size(); i++) {
-					addPFGEdge(
-						csManager.getCSVar(caller_ctx, stmt.getRValue().getArg(i)), 
-						csManager.getCSVar(callee_ctx, args.get(i)));
-				}
-				if (stmt.getLValue() != null) {
-					callee.getMethod().getIR().getReturnVars().forEach(ret -> {
-						addPFGEdge(
-							csManager.getCSVar(callee_ctx, ret), 
-							csManager.getCSVar(caller_ctx, stmt.getLValue()));
-					});
-				}
 			} else {
 				throw new RuntimeException();
+			}
+			callGraph.addEdge(new Edge<CSCallSite,CSMethod>(kind, callSite, callee));
+			addReachable(callee);
+			List<Var> args = callee.getMethod().getIR().getParams();
+			for (int i = 0; i < args.size(); i++) {
+				addPFGEdge(
+					csManager.getCSVar(caller_ctx, stmt.getRValue().getArg(i)), 
+					csManager.getCSVar(callee_ctx, args.get(i)));
+			}
+			if (stmt.getLValue() != null) {
+				callee.getMethod().getIR().getReturnVars().forEach(ret -> {
+					addPFGEdge(
+						csManager.getCSVar(callee_ctx, ret), 
+						csManager.getCSVar(caller_ctx, stmt.getLValue()));
+				});
 			}
 		}
 	}
@@ -433,10 +447,13 @@ class Solver {
     private void outputResult() {
 		//System.out.println(obj_stmt.size());
 		preprocessResult.test_pts.forEach((test_id, pt) -> {
-			System.out.println("test_id: " + test_id + ", pt: " + pt + ", cnt: " + csManager.getCSVarsOf(pt).size());
+			//System.out.println("test_id: " + test_id + ", pt: " + pt + ", cnt: " + csManager.getCSVarsOf(pt).size());
 			TreeSet<Integer> ans = new TreeSet<>();
 			for (CSVar csVar: csManager.getCSVarsOf(pt)) {
 				PointsToSet pts = csVar.getPointsToSet();
+				if (pts == null) {
+					continue;
+				}
 				for (CSObj csObj: pts) {
 					//cnt += 1;
 					//Obj obj = csobj.getObject();
@@ -461,5 +478,32 @@ class Solver {
 		} catch (FileNotFoundException e) {
 			logger.warn("Failed to dump", e);
 		}
+	}
+
+	private class Timer{
+
+		private final Thread thread;
+
+		private Timer(long sec) {
+			thread = new Thread(() -> {
+				try {
+					Thread.sleep(sec * 1000);
+					throw new RuntimeException();
+				} catch (InterruptedException ignored) {
+					
+				}
+				timeOut = true;
+			});
+		}
+
+		private void startCountDown() {
+			//System.out.println("Time Begin!");
+            thread.start();
+        }
+
+        private void stop() {
+			//System.out.println("strike");
+            thread.interrupt();
+        }
 	}
 }
