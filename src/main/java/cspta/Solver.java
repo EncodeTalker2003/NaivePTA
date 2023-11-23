@@ -124,8 +124,8 @@ class Solver {
 
     private void initialize() {
 		//timeOut = false;
-		timer = new Timer(57);
-		timer.startCountDown();
+		//timer = new Timer(57);
+		//timer.startCountDown();
 		
 
         csManager = new MapBasedCSManager();
@@ -251,9 +251,6 @@ class Solver {
 
 		@Override
 		public Void visit(Invoke stmt) {
-			if (stmt.isDynamic()) {
-				throw new RuntimeException();
-			}
 			if (stmt.isStatic()) {
 				JMethod callee = resolveCallee(null, stmt);
 				CSCallSite csCallSite = csManager.getCSCallSite(context, stmt);
