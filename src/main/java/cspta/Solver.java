@@ -8,8 +8,6 @@ import java.io.PrintStream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import cspta.PreprocessResult;
-
 import pascal.taie.World;
 import pascal.taie.analysis.graph.callgraph.CallGraphs;
 import pascal.taie.analysis.graph.callgraph.CallKind;
@@ -28,7 +26,9 @@ import pascal.taie.analysis.pta.core.cs.element.MapBasedCSManager;
 import pascal.taie.analysis.pta.core.cs.element.Pointer;
 import pascal.taie.analysis.pta.core.cs.element.StaticField;
 import pascal.taie.analysis.pta.core.cs.selector.ContextSelector;
+import pascal.taie.analysis.pta.core.heap.Descriptor;
 import pascal.taie.analysis.pta.core.heap.HeapModel;
+import pascal.taie.analysis.pta.core.heap.MockObj;
 import pascal.taie.analysis.pta.core.heap.Obj;
 import pascal.taie.analysis.pta.pts.PointsToSet;
 import pascal.taie.analysis.pta.pts.PointsToSetFactory;
@@ -39,29 +39,18 @@ import pascal.taie.ir.exp.NewMultiArray;
 import pascal.taie.ir.exp.NewExp;
 import pascal.taie.ir.exp.Literal;
 import pascal.taie.ir.exp.ReferenceLiteral;
-import pascal.taie.ir.stmt.Copy;
-import pascal.taie.ir.stmt.Invoke;
-import pascal.taie.ir.stmt.LoadArray;
-import pascal.taie.ir.stmt.LoadField;
-import pascal.taie.ir.stmt.New;
-import pascal.taie.ir.stmt.StmtVisitor;
-import pascal.taie.ir.stmt.StoreArray;
-import pascal.taie.ir.stmt.StoreField;
-import pascal.taie.ir.stmt.Cast;
-import pascal.taie.ir.stmt.Monitor;
-import pascal.taie.ir.stmt.AssignLiteral;
+import pascal.taie.ir.stmt.*;
 import pascal.taie.language.classes.ClassHierarchy;
 import pascal.taie.language.classes.JField;
 import pascal.taie.language.classes.JMethod;
 import pascal.taie.language.type.Type;
 import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.ArrayType;
+import pascal.taie.util.collection.Maps;
+import pascal.taie.util.collection.Maps;
 
 import java.util.*;
 import java.util.stream.Collectors;
-
-
-import javax.management.RuntimeErrorException;
 
 import cspta.selector.*;
 import cspta.context.*;
@@ -70,7 +59,11 @@ class Solver {
 
     private static final Logger logger = LogManager.getLogger(Solver.class);
 
+	private final Map<NewMultiArray, Obj[]> newArrays = Maps.newMap();
+
 	private final File dumpPath = new File("result.txt");
+
+	private static final Descriptor MULTI_ARRAY_DESC = () -> "MultiArrayObj";
 
     private final AnalysisOptions options;
 
@@ -112,13 +105,13 @@ class Solver {
     }
 
     public PointerAnalysisResult solve() {
-		System.out.println("Begin Solve");
+		//System.out.println("Begin Solve");
         initialize();
-		System.out.println("Initialize");
+		//System.out.println("Initialize");
         analyze();
-		System.out.println("Analyze");
+		//System.out.println("Analyze");
 		outputResult();
-		System.out.println("OutputResult");
+		//System.out.println("OutputResult");
 		return finalResult;
     }
 
@@ -174,7 +167,7 @@ class Solver {
 					throw new RuntimeException();
 				}*/
 				if (stmt.toString().contains("jdk"))  {
-					System.out.println("Haven't implemented");
+					//System.out.println("Haven't implemented");
 					throw new RuntimeException();
 				}
 				stmt.accept(new StmtProcessor(csMethod));
@@ -211,10 +204,36 @@ class Solver {
 
 			NewExp rval = stmt.getRValue();
 			if (rval instanceof NewMultiArray) {
-				throw new RuntimeException();
+				processNewMultiArray(stmt, heapContext, obj);
 			}
 			return null;
 		}
+
+		private void processNewMultiArray(
+                    New allocSite, Context arrayContext, Obj array) {
+                NewMultiArray newMultiArray = (NewMultiArray) allocSite.getRValue();
+                Obj[] arrays = newArrays.computeIfAbsent(newMultiArray, nma -> {
+                    ArrayType type = nma.getType();
+                    Obj[] newArrays = new MockObj[nma.getLengthCount() - 1];
+                    for (int i = 1; i < nma.getLengthCount(); ++i) {
+                        type = (ArrayType) type.elementType();
+                        newArrays[i - 1] = heapModel.getMockObj(MULTI_ARRAY_DESC,
+                                allocSite, type, allocSite.getContainer());
+                    }
+                    return newArrays;
+                });
+                for (Obj newArray : arrays) {
+                    Context elemContext = contextSelector
+                            .selectHeapContext(csMethod, newArray);
+                    CSObj arrayObj = csManager.getCSObj(arrayContext, array);
+                    ArrayIndex arrayIndex = csManager.getArrayIndex(arrayObj);
+					CSObj csObj = csManager.getCSObj(elemContext, newArray);
+					PointsToSet pts = ptsFactory.make(csObj);
+                    workList.addEntry(arrayIndex, pts);
+                    array = newArray;
+                    arrayContext = elemContext;
+                }
+            }
 
 		@Override
 		public Void visit(AssignLiteral stmt) {
@@ -356,15 +375,10 @@ class Solver {
      * returns the difference set of pointsToSet and pt(pointer).
      */
     private PointsToSet propagate(Pointer pointer, PointsToSet pointsToSet) {
-        PointsToSet diff = ptsFactory.make();
 		if (pointer.getPointsToSet() == null) {
 			pointer.setPointsToSet(ptsFactory.make());
 		}
-		for (CSObj obj: pointsToSet.getObjects()) {
-			if (!pointer.getPointsToSet().contains(obj)) {
-				diff.addObject(obj);
-			}
-		}
+		PointsToSet diff = pointer.getPointsToSet().addAllDiff(pointsToSet);
 		if (!diff.isEmpty()) {
 			diff.forEach(obj -> pointer.getPointsToSet().addObject(obj));
 			pointerFlowGraph.getSuccsOf(pointer).forEach(succ -> workList.addEntry(succ, diff));
@@ -397,11 +411,11 @@ class Solver {
 					csManager.getCSVar(caller_ctx, stmt.getRValue().getArg(i)), 
 					csManager.getCSVar(callee_ctx, args.get(i)));
 			}
-			if (stmt.getLValue() != null) {
+			if (stmt.getResult() != null) {
 				callee.getMethod().getIR().getReturnVars().forEach(ret -> {
 					addPFGEdge(
 						csManager.getCSVar(callee_ctx, ret), 
-						csManager.getCSVar(caller_ctx, stmt.getLValue()));
+						csManager.getCSVar(caller_ctx, stmt.getResult()));
 				});
 			}
 		}

@@ -40,7 +40,7 @@ public class PointerFlowGraph implements Graph<Pointer> {
 
     private final CSManager csManager;
 
-    PointerFlowGraph(CSManager csManager) {
+    public PointerFlowGraph(CSManager csManager) {
         this.csManager = csManager;
     }
 

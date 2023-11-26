@@ -20,7 +20,7 @@
  * License along with Tai-e. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package pascal.taie.analysis.pta.core.cs.context;
+package cspta.context;
 
 /**
  * Representation of contexts in context-sensitive pointer analysis.
