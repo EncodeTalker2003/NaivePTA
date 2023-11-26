@@ -11,6 +11,7 @@ import org.apache.logging.log4j.Logger;
 import pascal.taie.World;
 import pascal.taie.analysis.graph.callgraph.CallGraphs;
 import pascal.taie.analysis.graph.callgraph.CallKind;
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
 import pascal.taie.analysis.graph.callgraph.Edge;
 import pascal.taie.analysis.pta.PointerAnalysisResultImpl;
 import pascal.taie.analysis.pta.core.cs.CSCallGraph;
@@ -26,6 +27,8 @@ import pascal.taie.analysis.pta.core.cs.element.MapBasedCSManager;
 import pascal.taie.analysis.pta.core.cs.element.Pointer;
 import pascal.taie.analysis.pta.core.cs.element.StaticField;
 import pascal.taie.analysis.pta.core.cs.selector.ContextSelector;
+import pascal.taie.analysis.pta.core.solver.PointerFlowEdge;
+import pascal.taie.analysis.pta.core.solver.Transfer;
 import pascal.taie.analysis.pta.core.heap.Descriptor;
 import pascal.taie.analysis.pta.core.heap.HeapModel;
 import pascal.taie.analysis.pta.core.heap.MockObj;
@@ -48,6 +51,8 @@ import pascal.taie.language.type.ClassType;
 import pascal.taie.language.type.ArrayType;
 import pascal.taie.util.collection.Maps;
 import pascal.taie.util.collection.Maps;
+import pascal.taie.language.type.Type;
+import pascal.taie.language.type.TypeSystem;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -97,6 +102,8 @@ class Solver {
 
 	private PointsToSetFactory ptsFactory;
 
+	private TypeSystem typeSystem;
+
     Solver(AnalysisOptions options, HeapModel heapModel,
            ContextSelector contextSelector) {
         this.options = options;
@@ -123,14 +130,14 @@ class Solver {
 
         csManager = new MapBasedCSManager();
         callGraph = new CSCallGraph(csManager);
-        pointerFlowGraph = new PointerFlowGraph();
+        pointerFlowGraph = new PointerFlowGraph(csManager);
         workList = new WorkList();
 		obj_stmt = new HashMap<>();
 		hierarchy = World.get().getClassHierarchy();
 		preprocessResult = new PreprocessResult();
 		finalResult = new PointerAnalysisResult();
 		ptsFactory = new PointsToSetFactory(csManager.getObjectIndexer());
-		//obj2csobj = new HashMap<>();
+		typeSystem = World.get().getTypeSystem();
 		
 		World.get().getClassHierarchy().applicationClasses().forEach(jclass->{
             //logger.info("Add benchmark for class {}", jclass.getName());
@@ -145,6 +152,14 @@ class Solver {
         CSMethod csMethod = csManager.getCSMethod(defContext, main);
         callGraph.addEntryMethod(csMethod);
         addReachable(csMethod);
+    }
+
+	public TypeSystem getTypeSystem() {
+        return typeSystem;
+    }
+
+	public PointsToSet makePointsToSet() {
+        return ptsFactory.make();
     }
 
     /**
@@ -204,6 +219,7 @@ class Solver {
 
 			NewExp rval = stmt.getRValue();
 			if (rval instanceof NewMultiArray) {
+				//System.out.println("NewMultiArray");
 				processNewMultiArray(stmt, heapContext, obj);
 			}
 			return null;
@@ -222,7 +238,9 @@ class Solver {
                     }
                     return newArrays;
                 });
+				//int cnt = 0;
                 for (Obj newArray : arrays) {
+					//cnt++;
                     Context elemContext = contextSelector
                             .selectHeapContext(csMethod, newArray);
                     CSObj arrayObj = csManager.getCSObj(arrayContext, array);
@@ -233,6 +251,7 @@ class Solver {
                     array = newArray;
                     arrayContext = elemContext;
                 }
+				//System.out.println("cnt: " + cnt);
             }
 
 		@Override
@@ -254,7 +273,8 @@ class Solver {
 		public Void visit(Copy stmt) {
 			addPFGEdge(
 				csManager.getCSVar(context, stmt.getRValue()), 
-				csManager.getCSVar(context, stmt.getLValue())
+				csManager.getCSVar(context, stmt.getLValue()),
+				FlowKind.LOCAL_ASSIGN
 			);
 			return null;
 		}
@@ -263,7 +283,9 @@ class Solver {
 		public Void visit(Cast stmt) {
 			addPFGEdge(
 				csManager.getCSVar(context, stmt.getRValue().getValue()), 
-				csManager.getCSVar(context, stmt.getLValue())
+				csManager.getCSVar(context, stmt.getLValue()),
+				FlowKind.CAST,
+				stmt.getRValue().getType()
 			);
 			return null;
 		}
@@ -285,7 +307,8 @@ class Solver {
 			if (stmt.isStatic()) {
 				addPFGEdge(
 					csManager.getStaticField(stmt.getFieldRef().resolve()),
-					csManager.getCSVar(context, stmt.getLValue())
+					csManager.getCSVar(context, stmt.getLValue()),
+					FlowKind.STATIC_LOAD
 				);
 			}
 			return null;
@@ -296,7 +319,8 @@ class Solver {
 			if (stmt.isStatic()) {
 				addPFGEdge(
 					csManager.getCSVar(context, stmt.getRValue()),
-					csManager.getStaticField(stmt.getFieldRef().resolve())
+					csManager.getStaticField(stmt.getFieldRef().resolve()),
+					FlowKind.STATIC_STORE
 				);
 			}
 			return null;
@@ -306,18 +330,25 @@ class Solver {
     /**
      * Adds an edge "source -> target" to the PFG.
      */
-    private void addPFGEdge(Pointer source, Pointer target) {
-        if (pointerFlowGraph.getSuccsOf(source).contains(target)) {
-			return;
-		}
-		pointerFlowGraph.addEdge(source, target);
-		if (source.getPointsToSet() == null) {
-			source.setPointsToSet(ptsFactory.make());
-		}
-		PointsToSet pts = source.getPointsToSet();
-		if ((pts != null) && (!pts.isEmpty())) {
-			workList.addEntry(target, pts);
-		}
+	public void addPFGEdge(Pointer source, Pointer target, FlowKind kind, Transfer transfer) {
+        PointerFlowEdge edge = pointerFlowGraph.getOrAddEdge(kind, source, target);
+        if (edge != null && edge.addTransfer(transfer)) {
+			if (source.getPointsToSet() == null) {
+				source.setPointsToSet(ptsFactory.make());
+			}
+            PointsToSet targetSet = transfer.apply(edge, source.getPointsToSet());
+            if (!targetSet.isEmpty()) {
+                workList.addEntry(target, targetSet);
+            }
+        }
+    }
+
+	public void addPFGEdge(Pointer source, Pointer target, FlowKind kind) {
+        addPFGEdge(source, target, kind, Identity.get());
+    }
+
+	public void addPFGEdge(Pointer source, Pointer target, FlowKind kind, Type type) {
+        addPFGEdge(source, target, kind, new TypeFilter(type, this));
     }
 
     /**
@@ -337,25 +368,30 @@ class Solver {
 						var.getStoreFields().forEach(stmt -> {
 							addPFGEdge(
 								csManager.getCSVar(context, stmt.getRValue()),
-								csManager.getInstanceField(obj, stmt.getFieldRef().resolve()));
+								csManager.getInstanceField(obj, stmt.getFieldRef().resolve()),
+								FlowKind.INSTANCE_STORE);
 						});
 
 						var.getLoadFields().forEach(stmt -> {
 							addPFGEdge(
 								csManager.getInstanceField(obj, stmt.getFieldRef().resolve()),
-								csManager.getCSVar(context, stmt.getLValue()));
+								csManager.getCSVar(context, stmt.getLValue()),
+								FlowKind.INSTANCE_LOAD);
 						});
 
 						var.getStoreArrays().forEach(stmt -> {
 							addPFGEdge(
 								csManager.getCSVar(context, stmt.getRValue()), 
-								csManager.getArrayIndex(obj));
+								csManager.getArrayIndex(obj),
+								FlowKind.ARRAY_STORE,
+								csManager.getArrayIndex(obj).getType());
 						});
 
 						var.getLoadArrays().forEach(stmt -> {
 							addPFGEdge(
 								csManager.getArrayIndex(obj), 
-								csManager.getCSVar(context, stmt.getLValue()));
+								csManager.getCSVar(context, stmt.getLValue()),
+								FlowKind.ARRAY_LOAD);
 						});
 					}
 
@@ -380,8 +416,11 @@ class Solver {
 		}
 		PointsToSet diff = pointer.getPointsToSet().addAllDiff(pointsToSet);
 		if (!diff.isEmpty()) {
-			diff.forEach(obj -> pointer.getPointsToSet().addObject(obj));
-			pointerFlowGraph.getSuccsOf(pointer).forEach(succ -> workList.addEntry(succ, diff));
+			pointerFlowGraph.getOutEdgesOf(pointer).forEach(edge -> {
+                Pointer target = edge.target();
+                edge.getTransfers().forEach(transfer ->
+                        workList.addEntry(target, transfer.apply(edge, diff)));
+            });
 		}
 		return diff;
     }
@@ -409,13 +448,15 @@ class Solver {
 			for (int i = 0; i < args.size(); i++) {
 				addPFGEdge(
 					csManager.getCSVar(caller_ctx, stmt.getRValue().getArg(i)), 
-					csManager.getCSVar(callee_ctx, args.get(i)));
+					csManager.getCSVar(callee_ctx, args.get(i)),
+					FlowKind.PARAMETER_PASSING);
 			}
 			if (stmt.getResult() != null) {
 				callee.getMethod().getIR().getReturnVars().forEach(ret -> {
 					addPFGEdge(
 						csManager.getCSVar(callee_ctx, ret), 
-						csManager.getCSVar(caller_ctx, stmt.getResult()));
+						csManager.getCSVar(caller_ctx, stmt.getResult()),
+						FlowKind.RETURN);
 				});
 			}
 		}
@@ -431,9 +472,6 @@ class Solver {
         recv.getVar().getInvokes().forEach(stmt -> {
 			CSCallSite csCallSite = csManager.getCSCallSite(recv.getContext(), stmt);
 			JMethod callee = resolveCallee(recvObj, stmt);
-			if (callee == null) {
-				throw new RuntimeException();
-			}
 			Context context = contextSelector.selectContext(csCallSite, recvObj, callee);
 			CSMethod csCallee = csManager.getCSMethod(context, callee);
 			PointsToSet new_pts = ptsFactory.make(recvObj);

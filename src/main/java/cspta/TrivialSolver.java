@@ -12,6 +12,7 @@ import pascal.taie.analysis.misc.IRDumper;
 import pascal.taie.analysis.pta.core.heap.AllocationSiteBasedModel;
 import pascal.taie.analysis.pta.core.heap.HeapModel;
 import pascal.taie.config.AnalysisConfig;
+import pascal.taie.analysis.pta.core.solver.PointerFlowEdge;
 
 
 public class TrivialSolver{

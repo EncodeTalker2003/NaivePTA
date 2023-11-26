@@ -22,36 +22,65 @@
 
 package cspta;
 
+import pascal.taie.analysis.graph.flowgraph.FlowKind;
+import pascal.taie.analysis.pta.core.cs.element.CSManager;
 import pascal.taie.analysis.pta.core.cs.element.Pointer;
-import pascal.taie.util.collection.Maps;
-import pascal.taie.util.collection.MultiMap;
+import pascal.taie.util.collection.Views;
+import pascal.taie.util.graph.Edge;
+import pascal.taie.util.graph.Graph;
+import pascal.taie.analysis.pta.core.solver.PointerFlowEdge;
 
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Represents pointer flow graph in context-sensitive pointer analysis.
  */
-class PointerFlowGraph {
+public class PointerFlowGraph implements Graph<Pointer> {
 
-    /**
-     * Map from a pointer (node) to its successors in PFG.
-     */
-    private final MultiMap<Pointer, Pointer> successors = Maps.newMultiMap();
+    private final CSManager csManager;
 
-    /**
-     * Adds an edge (source -> target) to this PFG.
-     *
-     * @return true if this PFG changed as a result of the call,
-     * otherwise false.
-     */
-    boolean addEdge(Pointer source, Pointer target) {
-        return successors.put(source, target);
+    public PointerFlowGraph(CSManager csManager) {
+        this.csManager = csManager;
     }
 
     /**
-     * @return successors of given pointer in the PFG.
+     * Adds a pointer flow edge {@code source} -> {@code target}, and
+     * returns the edge. If the edge already exists and {@code kind}
+     * is not {@link FlowKind#OTHER}, {@code null} is returned.
      */
-    Set<Pointer> getSuccsOf(Pointer pointer) {
-        return successors.get(pointer);
+    public PointerFlowEdge getOrAddEdge(FlowKind kind, Pointer source, Pointer target) {
+        return source.getOrAddEdge(kind, source, target);
+    }
+
+    @Override
+    public Set<? extends Edge<Pointer>> getInEdgesOf(Pointer node) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Set<PointerFlowEdge> getOutEdgesOf(Pointer pointer) {
+        return pointer.getOutEdges();
+    }
+
+    public Stream<Pointer> pointers() {
+        return csManager.pointers();
+    }
+
+    @Override
+    public Set<Pointer> getPredsOf(Pointer node) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Set<Pointer> getSuccsOf(Pointer node) {
+        return Views.toMappedSet(node.getOutEdges(),
+                PointerFlowEdge::target);
+    }
+
+    @Override
+    public Set<Pointer> getNodes() {
+        return pointers().collect(Collectors.toUnmodifiableSet());
     }
 }
