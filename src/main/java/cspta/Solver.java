@@ -166,9 +166,16 @@ class Solver {
      * Processes new reachable context-sensitive method.
      */
     private void addReachable(CSMethod csMethod) {
-		//System.out.println("----------Method Begins----------");
+		
 		
         if (!callGraph.contains(csMethod)) {
+			/*System.out.println("----------Method Begins----------");
+			csMethod.getMethod().getIR().getStmts().forEach(stmt -> {
+				System.out.println(stmt);
+			});
+			System.out.println("----------Method Ends----------");
+			System.out.println("");*/
+
 			callGraph.addReachableMethod(csMethod);
 			csMethod.getMethod().getIR().getStmts().forEach(stmt -> {
 				/*if (stmt instanceof InvokeStatic callSite) {
@@ -187,9 +194,9 @@ class Solver {
 				}
 				stmt.accept(new StmtProcessor(csMethod));
 			});
+			
 		}
-		//System.out.println("----------Method Ends----------");
-		//System.out.println("");
+		
     }
 
     /**
@@ -278,9 +285,10 @@ class Solver {
 			);
 			return null;
 		}
-
+		
 		@Override
 		public Void visit(Cast stmt) {
+			//System.out.println("a cast "+stmt);
 			addPFGEdge(
 				csManager.getCSVar(context, stmt.getRValue().getValue()), 
 				csManager.getCSVar(context, stmt.getLValue()),
@@ -289,10 +297,12 @@ class Solver {
 			);
 			return null;
 		}
+		
 
 		@Override
 		public Void visit(Invoke stmt) {
 			if (stmt.isStatic()) {
+				System.out.println(stmt.toString());
 				JMethod callee = resolveCallee(null, stmt);
 				CSCallSite csCallSite = csManager.getCSCallSite(context, stmt);
 				Context calleeContext = contextSelector.selectContext(csCallSite, callee);
